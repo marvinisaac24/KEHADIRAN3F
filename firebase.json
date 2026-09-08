@@ -1,0 +1,7 @@
+{
+  "firestore": {
+    "database": "ai-studio-sistemketidakhad-75f156d3-289b-4e79-b60f-62b18aa9625e",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}

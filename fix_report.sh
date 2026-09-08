@@ -1,0 +1,2 @@
+#!/bin/bash
+sed -i 's/    const win = window.open('\''\'', '\''_blank'\'');/    const opt = { margin: 1, filename: `Resit_${reference}.pdf`, image: { type: '\''jpeg'\'', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: '\''in'\'', format: '\''letter'\'', orientation: '\''portrait'\'' } };\n    const tempDiv = document.createElement('\''div'\'');\n    tempDiv.innerHTML = content;\n    html2pdf().set(opt).from(tempDiv).save();/g' src/pages/parent/ReportAbsence.tsx
