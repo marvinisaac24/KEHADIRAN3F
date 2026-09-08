@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "Sistem Ketidakhadiran SK Tudan",
+  "description": "Sistem Ketidakhadiran Murid 3 Fleksibel SK Tudan dengan Pengurusan Kelulusan dan Laporan Analitik",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

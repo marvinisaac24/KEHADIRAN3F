@@ -19,8 +19,20 @@ import {
   UserMinus,
   Loader2,
   Upload,
+  ShieldCheck,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Search,
+  Image as ImageIcon,
+  X,
 } from "lucide-react";
 import Papa from "papaparse";
+import {
+  parseAbsenceDate,
+  formatAbsenceDate,
+  formatDateTime,
+} from "../../lib/dateUtils";
 
 import {
   BarChart,
@@ -89,6 +101,7 @@ export function ReportsView() {
     { id: "daily", label: "Kehadiran Harian", icon: Calendar },
     { id: "monthly", label: "Analisis Bulanan", icon: BarChart3 },
     { id: "reasons", label: "Sebab Ketidakhadiran", icon: FileText },
+    { id: "approvals", label: "Rekod Kelulusan", icon: ShieldCheck },
     { id: "class", label: "Ringkasan Kelas", icon: Users },
   ];
 
@@ -257,7 +270,7 @@ export function ReportsView() {
             )}
           </div>
 
-          {(activeTab === "daily" || activeTab === "reasons") && (
+          {(activeTab === "daily" || activeTab === "reasons" || activeTab === "approvals") && (
             <div className="flex items-center space-x-2 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
               <Filter className="w-4 h-4 text-slate-500" />
               <select
@@ -402,6 +415,14 @@ export function ReportsView() {
                   excludedStudents={excludedStudents}
                 />
               )}
+              {activeTab === "approvals" && (
+                <StudentApprovalsTab
+                  absences={absences}
+                  month={selectedMonth}
+                  year={selectedYear}
+                  onRefresh={fetchAbsences}
+                />
+              )}
               {activeTab === "class" && <ClassSummaryTab />}
             </>
           )}
@@ -438,17 +459,22 @@ function DailyAttendanceTab({
       .filter((a) => {
         if (a.studentName !== student) return false;
         if (a.status !== "Diluluskan") return false;
-        const [d, m, y] = a.date.split("/");
-        return parseInt(m, 10) === month && parseInt(y, 10) === year;
+        const parsed = parseAbsenceDate(a.date);
+        return parsed && parsed.month === month && parsed.year === year;
       })
       .forEach((a) => {
-        const day = parseInt(a.date.split("/")[0], 10);
+        const parsed = parseAbsenceDate(a.date);
+        if (!parsed) return;
+        const day = parsed.day;
         let mark = "0";
         if (a.attachmentUrl) {
+          const reasonUpper = (a.reason || "").toUpperCase();
           if (
             a.reason === "Sakit" ||
             a.reason === "Temujanji Doktor" ||
-            a.reason.toUpperCase().includes("SAKIT")
+            reasonUpper.includes("SAKIT") ||
+            reasonUpper.includes("DOKTOR") ||
+            reasonUpper.includes("KLINIK")
           ) {
             mark = "S";
           } else {
@@ -658,14 +684,10 @@ function MonthlyAnalysisTab({
     // Add firestore real data for selected year
     const dynamicMonthly = Array(12).fill(0);
     absences.forEach((a) => {
-      if (
-        a.status === "Diluluskan" &&
-        a.studentName === student &&
-        a.date.includes(`/${year}`)
-      ) {
-        const monthParts = a.date.split("/");
-        if (monthParts.length >= 2) {
-          const m = parseInt(monthParts[1], 10) - 1; // 0-indexed
+      if (a.status === "Diluluskan" && a.studentName === student) {
+        const parsed = parseAbsenceDate(a.date);
+        if (parsed && parsed.year === year) {
+          const m = parsed.month - 1; // 0-indexed
           if (m >= 0 && m < 12) dynamicMonthly[m]++;
         }
       }
@@ -803,15 +825,17 @@ function AbsenceReasonsTab({
 }) {
   const dynamicRecords = absences.filter((a) => {
     if (a.status !== "Diluluskan") return false;
-    const [d, m, y] = a.date.split("/");
-    return parseInt(m, 10) === month && parseInt(y, 10) === year;
+    const parsed = parseAbsenceDate(a.date);
+    return parsed && parsed.month === month && parsed.year === year;
   });
 
   const allRecords = dynamicRecords
     .map((a) => ({
-      date: a.date,
+      date: formatAbsenceDate(a.date),
       name: a.studentName,
-      reason: a.reason.toUpperCase(),
+      reason: (a.reason || "Tiada Sebab").toUpperCase(),
+      approvedAt: a.approvedAt,
+      status: a.status,
     }))
     .filter((r) => !excludedStudents.includes(r.name));
 
@@ -835,13 +859,16 @@ function AbsenceReasonsTab({
               Bil
             </th>
             <th className="border border-slate-300 dark:border-slate-600 p-3 w-32">
-              Tarikh
+              Tarikh Tidak Hadir
             </th>
             <th className="border border-slate-300 dark:border-slate-600 p-3">
-              Nama
+              Nama Murid
             </th>
             <th className="border border-slate-300 dark:border-slate-600 p-3">
-              Sebab Tidak Hadir
+              Sebab Ketidakhadiran
+            </th>
+            <th className="border border-slate-300 dark:border-slate-600 p-3 w-40 text-center">
+              Status Kelulusan
             </th>
           </tr>
         </thead>
@@ -854,7 +881,7 @@ function AbsenceReasonsTab({
               <td className="border border-slate-300 dark:border-slate-600 p-3 text-center">
                 {idx + 1}
               </td>
-              <td className="border border-slate-300 dark:border-slate-600 p-3">
+              <td className="border border-slate-300 dark:border-slate-600 p-3 font-semibold text-slate-800 dark:text-slate-200">
                 {record.date}
               </td>
               <td className="border border-slate-300 dark:border-slate-600 p-3 font-medium text-xs">
@@ -862,6 +889,16 @@ function AbsenceReasonsTab({
               </td>
               <td className="border border-slate-300 dark:border-slate-600 p-3 text-xs">
                 {record.reason}
+              </td>
+              <td className="border border-slate-300 dark:border-slate-600 p-3 text-center">
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">
+                  <CheckCircle2 className="w-3 h-3 mr-1" /> Diluluskan
+                </span>
+                {record.approvedAt && (
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    {formatDateTime(record.approvedAt)}
+                  </div>
+                )}
               </td>
             </tr>
           ))}
@@ -1016,6 +1053,355 @@ function ClassSummaryTab() {
                 4
               </td>
             </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function StudentApprovalsTab({
+  absences,
+  month,
+  year,
+  onRefresh,
+}: {
+  absences: any[];
+  month: number;
+  year: number;
+  onRefresh?: () => void;
+}) {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [filterByMonth, setFilterByMonth] = useState<boolean>(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  const monthName = new Date(year, month - 1, 1)
+    .toLocaleString("ms-MY", { month: "long" })
+    .toUpperCase();
+
+  const filteredAbsences = absences.filter((a) => {
+    // Exclude system marker
+    if (a.status === "Sistem") return false;
+
+    // Student search
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      const matchName = a.studentName?.toLowerCase().includes(term);
+      const matchRef = a.reference?.toLowerCase().includes(term);
+      const matchReason = a.reason?.toLowerCase().includes(term);
+      if (!matchName && !matchRef && !matchReason) return false;
+    }
+
+    // Status filter
+    if (statusFilter !== "all" && a.status !== statusFilter) {
+      return false;
+    }
+
+    // Month filter if active
+    if (filterByMonth) {
+      const parsed = parseAbsenceDate(a.date);
+      if (!parsed || parsed.month !== month || parsed.year !== year) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  // Sort: pending first, then by date descending
+  const sortedRecords = [...filteredAbsences].sort((a, b) => {
+    if (a.status === "Menunggu Kelulusan" && b.status !== "Menunggu Kelulusan") return -1;
+    if (a.status !== "Menunggu Kelulusan" && b.status === "Menunggu Kelulusan") return 1;
+    const timeA = new Date(a.approvedAt || a.date || a.createdAt || 0).getTime();
+    const timeB = new Date(b.approvedAt || b.date || b.createdAt || 0).getTime();
+    return timeB - timeA;
+  });
+
+  const validRecords = absences.filter((a) => a.status !== "Sistem");
+  const approvedTotal = validRecords.filter((a) => a.status === "Diluluskan").length;
+  const pendingTotal = validRecords.filter((a) => a.status === "Menunggu Kelulusan").length;
+  const rejectedTotal = validRecords.filter((a) => a.status === "Ditolak").length;
+
+  return (
+    <div className="space-y-6">
+      {/* Lightbox Preview */}
+      {previewImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 print:hidden">
+          <div className="relative bg-white dark:bg-slate-800 rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="flex justify-between items-center p-4 border-b border-slate-200 dark:border-slate-700">
+              <h3 className="font-bold text-slate-900 dark:text-white">Lampiran / Surat Sokongan MC</h3>
+              <button
+                onClick={() => setPreviewImage(null)}
+                className="p-2 bg-slate-100 dark:bg-slate-700 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+              >
+                <X className="w-5 h-5 text-slate-600 dark:text-slate-300" />
+              </button>
+            </div>
+            <div className="p-4 overflow-auto flex-1 flex justify-center bg-slate-50 dark:bg-slate-900/50">
+              {previewImage.startsWith("data:image") ||
+              previewImage.includes(".png") ||
+              previewImage.includes(".jpg") ||
+              previewImage.includes(".jpeg") ? (
+                <img
+                  src={previewImage}
+                  alt="Attachment"
+                  className="max-w-full h-auto object-contain rounded-lg border border-slate-200 dark:border-slate-700"
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-slate-500">
+                  <FileText className="w-16 h-16 mb-4 text-slate-400" />
+                  <p>Dokumen lampiran fail.</p>
+                  <a
+                    href={previewImage}
+                    download="lampiran"
+                    className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+                  >
+                    Muat Turun Fail
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header & Stats Cards */}
+      <div className="border-b border-slate-200 dark:border-slate-700 pb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+              Rekod Kelulusan Ketidakhadiran Murid
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Rekod status permohonan ketidakhadiran murid yang telah diluluskan dan disahkan dalam laporan analitik
+            </p>
+          </div>
+        </div>
+
+        {/* Summary metric counters */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+          <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-3">
+            <span className="text-xs text-slate-500 dark:text-slate-400 block font-medium">
+              Jumlah Permohonan
+            </span>
+            <span className="text-2xl font-bold text-slate-900 dark:text-white">
+              {validRecords.length}
+            </span>
+          </div>
+          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/40 rounded-xl p-3">
+            <span className="text-xs text-green-700 dark:text-green-400 block font-medium">
+              Diluluskan (Dalam Analitik)
+            </span>
+            <span className="text-2xl font-bold text-green-700 dark:text-green-400">
+              {approvedTotal}
+            </span>
+          </div>
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 rounded-xl p-3">
+            <span className="text-xs text-amber-700 dark:text-amber-400 block font-medium">
+              Menunggu Kelulusan
+            </span>
+            <span className="text-2xl font-bold text-amber-700 dark:text-amber-400">
+              {pendingTotal}
+            </span>
+          </div>
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-xl p-3">
+            <span className="text-xs text-red-700 dark:text-red-400 block font-medium">
+              Ditolak
+            </span>
+            <span className="text-2xl font-bold text-red-700 dark:text-red-400">
+              {rejectedTotal}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-200 dark:border-slate-700 print:hidden">
+        <div className="relative w-full sm:w-72">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Cari murid atau rujukan..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          {/* Status filters */}
+          <div className="flex items-center gap-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-1 rounded-lg text-xs">
+            <button
+              onClick={() => setStatusFilter("all")}
+              className={`px-2.5 py-1 rounded font-medium transition-colors ${
+                statusFilter === "all"
+                  ? "bg-blue-600 text-white"
+                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-100"
+              }`}
+            >
+              Semua
+            </button>
+            <button
+              onClick={() => setStatusFilter("Diluluskan")}
+              className={`px-2.5 py-1 rounded font-medium transition-colors ${
+                statusFilter === "Diluluskan"
+                  ? "bg-green-600 text-white"
+                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-100"
+              }`}
+            >
+              Diluluskan
+            </button>
+            <button
+              onClick={() => setStatusFilter("Menunggu Kelulusan")}
+              className={`px-2.5 py-1 rounded font-medium transition-colors ${
+                statusFilter === "Menunggu Kelulusan"
+                  ? "bg-amber-600 text-white"
+                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-100"
+              }`}
+            >
+              Menunggu
+            </button>
+            <button
+              onClick={() => setStatusFilter("Ditolak")}
+              className={`px-2.5 py-1 rounded font-medium transition-colors ${
+                statusFilter === "Ditolak"
+                  ? "bg-red-600 text-white"
+                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-100"
+              }`}
+            >
+              Ditolak
+            </button>
+          </div>
+
+          <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg cursor-pointer">
+            <input
+              type="checkbox"
+              checked={filterByMonth}
+              onChange={(e) => setFilterByMonth(e.target.checked)}
+              className="rounded text-blue-600 focus:ring-0"
+            />
+            <span>Hanya Bulan {monthName}</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Table of Approval Records */}
+      <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+        <table className="w-full text-sm text-left border-collapse">
+          <thead>
+            <tr className="bg-slate-100 dark:bg-slate-700/80 text-xs font-semibold text-slate-700 dark:text-slate-200">
+              <th className="p-3 w-12 text-center border-b border-slate-200 dark:border-slate-700">Bil</th>
+              <th className="p-3 w-32 border-b border-slate-200 dark:border-slate-700">No. Rujukan</th>
+              <th className="p-3 border-b border-slate-200 dark:border-slate-700">Nama Murid</th>
+              <th className="p-3 w-24 border-b border-slate-200 dark:border-slate-700">Kelas</th>
+              <th className="p-3 w-36 border-b border-slate-200 dark:border-slate-700">Tarikh Tidak Hadir</th>
+              <th className="p-3 border-b border-slate-200 dark:border-slate-700">Sebab</th>
+              <th className="p-3 w-28 text-center border-b border-slate-200 dark:border-slate-700">Lampiran</th>
+              <th className="p-3 w-36 text-center border-b border-slate-200 dark:border-slate-700">Status Kelulusan</th>
+              <th className="p-3 w-40 border-b border-slate-200 dark:border-slate-700">Tarikh Kelulusan</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+            {sortedRecords.length > 0 ? (
+              sortedRecords.map((record, idx) => {
+                const isApproved = record.status === "Diluluskan";
+                const isPending = record.status === "Menunggu Kelulusan";
+                const isRejected = record.status === "Ditolak";
+
+                return (
+                  <tr
+                    key={record.id || idx}
+                    className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
+                  >
+                    <td className="p-3 text-center text-xs text-slate-500">{idx + 1}</td>
+                    <td className="p-3 text-xs font-mono text-slate-600 dark:text-slate-400">
+                      {record.reference || (record.id ? record.id.substring(0, 8).toUpperCase() : "-")}
+                    </td>
+                    <td className="p-3">
+                      <span className="font-semibold text-xs text-slate-900 dark:text-white block">
+                        {record.studentName}
+                      </span>
+                    </td>
+                    <td className="p-3 text-xs text-slate-600 dark:text-slate-400">
+                      {record.studentClass || "3 Fleksibel"}
+                    </td>
+                    <td className="p-3">
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                        {formatAbsenceDate(record.date)}
+                      </span>
+                    </td>
+                    <td className="p-3 text-xs text-slate-700 dark:text-slate-300">
+                      <span className="font-medium bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded">
+                        {record.reason || "Tiada Sebab"}
+                      </span>
+                    </td>
+                    <td className="p-3 text-center">
+                      {record.attachmentUrl ? (
+                        <button
+                          onClick={() => setPreviewImage(record.attachmentUrl)}
+                          className="inline-flex items-center text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium cursor-pointer"
+                        >
+                          <ImageIcon className="w-3.5 h-3.5 mr-1" />
+                          Lihat MC
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400">-</span>
+                      )}
+                    </td>
+                    <td className="p-3 text-center">
+                      {isApproved && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">
+                          <CheckCircle2 className="w-3 h-3 mr-1" />
+                          Diluluskan
+                        </span>
+                      )}
+                      {isPending && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                          <Clock className="w-3 h-3 mr-1" />
+                          Menunggu
+                        </span>
+                      )}
+                      {isRejected && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
+                          <XCircle className="w-3 h-3 mr-1" />
+                          Ditolak
+                        </span>
+                      )}
+                      {!isApproved && !isPending && !isRejected && (
+                        <span className="text-xs text-slate-500">{record.status || "-"}</span>
+                      )}
+                    </td>
+                    <td className="p-3 text-xs text-slate-600 dark:text-slate-400">
+                      {record.approvedAt ? (
+                        <div>
+                          <div className="font-medium text-slate-800 dark:text-slate-200">
+                            {formatDateTime(record.approvedAt)}
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            Oleh: {record.approvedBy || "Pentadbir"}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 italic">Belum diluluskan</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td colSpan={9} className="p-8 text-center text-slate-400">
+                  <FileText className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                    Tiada rekod kelulusan ditemui
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Cuba ubah kata kunci carian atau tetapan tapisan.
+                  </p>
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

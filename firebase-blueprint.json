@@ -1,0 +1,49 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role management",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["parent", "teacher", "admin"] },
+        "name": { "type": "string" },
+        "studentId": { "type": "string" },
+        "classId": { "type": "string" }
+      },
+      "required": ["uid", "email", "role", "name"]
+    },
+    "Absence": {
+      "title": "Absence",
+      "description": "Student absence report and approval record",
+      "type": "object",
+      "properties": {
+        "reference": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "studentClass": { "type": "string" },
+        "parentId": { "type": "string" },
+        "date": { "type": "string" },
+        "reason": { "type": "string" },
+        "attachmentUrl": { "type": "string" },
+        "fileName": { "type": "string" },
+        "status": { "type": "string", "enum": ["Menunggu Kelulusan", "Diluluskan", "Ditolak"] },
+        "createdAt": { "type": "string" },
+        "approvedAt": { "type": "string" },
+        "approvedBy": { "type": "string" }
+      },
+      "required": ["studentName", "date", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile collection"
+    },
+    "/absences/{absenceId}": {
+      "schema": "Absence",
+      "description": "Student absence reports and approval history"
+    }
+  }
+}
